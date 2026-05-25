@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="es" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visualizador 3D VR | Ingeniería en Sistemas</title>
+    
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            margin: 0;
+            overflow-x: hidden;
+            background-color: #0f0f0f;
+        }
+        
+        main {
+            flex-grow: 1;
+            position: relative;
+            background: radial-gradient(circle at center, #2a2a2a 0%, #0f0f0f 100%);
+        }
+        
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            outline: none;
+        }
+
+        /* Sobrescritura de estilos del botón nativo de WebXR (VRButton) */
+        #VRButton {
+            z-index: 10;
+            bottom: 100px !important; /* Ajustado para librar la altura del footer */
+            padding: 12px 24px !important;
+            border: 1px solid rgba(13, 202, 240, 0.5) !important;
+            border-radius: 8px !important;
+            background: rgba(15, 15, 15, 0.7) !important;
+            color: #0dcaf0 !important;
+            font-weight: 600 !important;
+            letter-spacing: 1px;
+            backdrop-filter: blur(5px);
+            transition: all 0.3s ease !important;
+        }
+
+        #VRButton:hover {
+            background: rgba(13, 202, 240, 0.2) !important;
+            border-color: #0dcaf0 !important;
+            box-shadow: 0 0 15px rgba(13, 202, 240, 0.3);
+        }
+
+        .navbar {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            background-color: rgba(33, 37, 41, 0.95) !important;
+            backdrop-filter: blur(10px);
+        }
+    </style>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <nav class="navbar navbar-expand-lg navbar-dark shadow-sm fixed-top">
+        <div class="container">
+            <a class="navbar-brand text-info fw-bold" href="#">Render VR</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <span class="nav-link active">Evidencia de Aprendizaje</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <main id="canvas-container" style="margin-top: 56px;">
+        </main>
+
+    <footer class="bg-dark py-4 mt-auto border-top border-secondary">
+        <div class="container text-center text-secondary">
+            <p class="mb-1 text-light">Desarrollado por Leonardo Gutiérrez Jiménez | Estudiante de Ingeniería en Sistemas Computacionales</p>
+            <small>&copy; 2026 Todos los derechos reservados.</small>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { VRButton } from 'three/addons/webxr/VRButton.js';
+
+        const container = document.getElementById('canvas-container');
+        
+        // 1. CONFIGURACIÓN DE LA ESCENA
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x1a1a1a);
+
+        // 2. ARQUITECTURA WEBXR: PLAYER RIG Y CÁMARA
+        const camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.1, 100);
+        
+        // El PlayerRig actúa como el "cuerpo" del usuario en VR
+        const playerRig = new THREE.Group();
+        
+        // Ajusta las coordenadas X, Y, Z para el punto de aparición dentro de tu aula.
+        playerRig.position.set(0, 1.6, 2); 
+        
+        scene.add(playerRig);
+        playerRig.add(camera);
+
+        // 3. RENDERER: PIPELINE PBR Y CORRECCIÓN DE COLOR
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        renderer.xr.enabled = true;
+        
+        // Corrección estricta para materiales PBR exportados en GLB
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.2;
+        
+        container.appendChild(renderer.domElement);
+        document.body.appendChild(VRButton.createButton(renderer));
+
+        // 4. ILUMINACIÓN VOLUMÉTRICA
+        // HemisphereLight inyecta luz de rebote simulada para evitar caras negras
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.5);
+        hemiLight.position.set(0, 20, 0);
+        scene.add(hemiLight);
+
+        // Luz direccional suave
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(5, 10, 7.5);
+        scene.add(dirLight);
+
+        // 5. CONTROLES PC (Fallback)
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.target.set(0, 1.6, -5); 
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+
+        // 6. CARGA DEL MODELO
+        const loader = new GLTFLoader();
+        loader.load('modelo.glb', function (gltf) {
+            scene.add(gltf.scene);
+        }, undefined, function (error) {
+            console.error('Error al cargar el modelo GLB:', error);
+        });
+
+        // 7. MANEJO DE RESIZE
+        window.addEventListener('resize', onWindowResize, false);
+        function onWindowResize() {
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+
+        // 8. BUCLE DE RENDERIZADO
+        renderer.setAnimationLoop(function () {
+            controls.update();
+            renderer.render(scene, camera);
+        });
+    </script>
+</body>
+</html>
