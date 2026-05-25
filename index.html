@@ -6,7 +6,7 @@
     <title>Visualizador 3D VR | Ingeniería en Sistemas</title>
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="shortcut icon" href="favicon.png" type="image/x-icon">
+    
     <style>
         body {
             display: flex;
@@ -30,10 +30,10 @@
             outline: none;
         }
 
-        /* Sobrescritura de estilos del botón nativo de WebXR (VRButton) */
+        /* Posicionamiento del botón VR por encima del footer */
         #VRButton {
             z-index: 10;
-            bottom: 100px !important; /* Ajustado para librar la altura del footer */
+            bottom: 100px !important; 
             padding: 12px 24px !important;
             border: 1px solid rgba(13, 202, 240, 0.5) !important;
             border-radius: 8px !important;
@@ -72,9 +72,6 @@
     <nav class="navbar navbar-expand-lg navbar-dark shadow-sm fixed-top">
         <div class="container">
             <a class="navbar-brand text-info fw-bold" href="#">Render VR</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
                     <li class="nav-item">
@@ -90,7 +87,7 @@
 
     <footer class="bg-dark py-4 mt-auto border-top border-secondary">
         <div class="container text-center text-secondary">
-            <p class="mb-1 text-light">Desarrollado por Leonardo Gutiérrez Jiménez | Estudiante de Ingeniería en Sistemas Computacionales</p>
+            <p class="mb-1 text-light">Desarrollado por el Estudiante de Ingeniería en Sistemas Computacionales</p>
             <small>&copy; 2026 Todos los derechos reservados.</small>
         </div>
     </footer>
@@ -109,55 +106,80 @@
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x1a1a1a);
 
-        // 2. ARQUITECTURA WEBXR: PLAYER RIG Y CÁMARA
+        // 2. ARQUITECTURA WEBXR (CAMERA RIG)
         const camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.1, 100);
         
-        // El PlayerRig actúa como el "cuerpo" del usuario en VR
+        // Estante base para mover al usuario en el espacio virtual
         const playerRig = new THREE.Group();
-        
-        // Ajusta las coordenadas X, Y, Z para el punto de aparición dentro de tu aula.
-        playerRig.position.set(0, 1.6, 2); 
-        
         scene.add(playerRig);
         playerRig.add(camera);
 
-        // 3. RENDERER: PIPELINE PBR Y CORRECCIÓN DE COLOR
+        // Posición inicial por defecto de la cámara con respecto al Rig (altura de ojos estándar)
+        camera.position.set(0, 1.6, 0);
+
+        // 3. RENDERER CON PIPELINE PARA MATERIALES PBR
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setPixelRatio(window.devicePixelRatio);
         renderer.setSize(container.clientWidth, container.clientHeight);
         renderer.xr.enabled = true;
         
-        // Corrección estricta para materiales PBR exportados en GLB
+        // Mapeo de color estricto para evitar texturas lavadas o negras
         renderer.outputColorSpace = THREE.SRGBColorSpace;
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1.2;
+        renderer.toneMappingExposure = 1.3;
         
         container.appendChild(renderer.domElement);
         document.body.appendChild(VRButton.createButton(renderer));
 
-        // 4. ILUMINACIÓN VOLUMÉTRICA
-        // HemisphereLight inyecta luz de rebote simulada para evitar caras negras
-        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.5);
+        // 4. ILUMINACIÓN AMBIENTAL (Corrección de zonas oscuras interiores)
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.8);
+        scene.add(ambientLight);
+
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.2);
         hemiLight.position.set(0, 20, 0);
         scene.add(hemiLight);
 
-        // Luz direccional suave
-        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
         dirLight.position.set(5, 10, 7.5);
         scene.add(dirLight);
 
-        // 5. CONTROLES PC (Fallback)
+        // 5. CONTROLES ESCRITORIO
         const controls = new OrbitControls(camera, renderer.domElement);
-        controls.target.set(0, 1.6, -5); 
         controls.enableDamping = true;
         controls.dampingFactor = 0.05;
 
-        // 6. CARGA DEL MODELO
+        // 6. CARGA Y ENRUTAMIENTO DINÁMICO DEL SPAWN POINT
         const loader = new GLTFLoader();
         loader.load('modelo.glb', function (gltf) {
-            scene.add(gltf.scene);
+            const model = gltf.scene;
+            
+            // Corrección de normales y opacidad en caras ocultas de SketchUp
+            model.traverse((child) => {
+                if (child.isMesh && child.material) {
+                    child.material.side = THREE.DoubleSide; 
+                    child.material.metalness = 0.0; // Evita el look negro reflectivo masivo
+                    child.material.roughness = 0.8;
+                    child.material.needsUpdate = true;
+                }
+            });
+
+            scene.add(model);
+
+            // Algoritmo de cálculo del Bounding Box
+            const box = new THREE.Box3().setFromObject(model);
+            const center = box.getCenter(new THREE.Vector3());
+            
+            // Coloca el Rig en el centro exacto del plano X y Z, apuntando al piso del modelo (box.min.y)
+            // WebXR gestionará automáticamente la altura física del visor sobre este punto.
+            playerRig.position.set(center.x, box.min.y, center.z);
+            
+            // Reorientar el foco de los controles de escritorio al centro
+            controls.target.set(center.x, box.min.y + 1.6, center.z - 0.1);
+            controls.update();
+            
+            console.log('Spawn configurado automáticamente en el centro del modelo.');
         }, undefined, function (error) {
-            console.error('Error al cargar el modelo GLB:', error);
+            console.error('Error crítico al cargar el modelo GLB:', error);
         });
 
         // 7. MANEJO DE RESIZE
@@ -168,9 +190,12 @@
             renderer.setSize(container.clientWidth, container.clientHeight);
         }
 
-        // 8. BUCLE DE RENDERIZADO
+        // 8. ANIMATION LOOP
         renderer.setAnimationLoop(function () {
-            controls.update();
+            // Solo actualiza controles si no se está ejecutando la sesión XR
+            if (!renderer.xr.isPresenting) {
+                controls.update();
+            }
             renderer.render(scene, camera);
         });
     </script>
